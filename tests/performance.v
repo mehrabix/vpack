@@ -26,6 +26,14 @@ mut:
     module_id int
 }
 
+struct PerformanceResult {
+pub:
+    bundle_size int
+    processing_time f64
+    module_count int
+    dependency_count int
+}
+
 fn parse_module(path string) !JsModule {
     // Read file content
     content := os.read_file(path) or { return error('Failed to read file: $path') }
@@ -147,49 +155,60 @@ fn generate_bundle(modules []ResolvedModule) !string {
     return bundle.str()
 }
 
-fn measure_time(f fn() !) !f64 {
-    start := time.now()
-    f()!
-    end := time.now()
-    return end - start
+fn measure_performance(entry_path string) !PerformanceResult {
+    start_time := time.now()
+    
+    // Parse entry module
+    entry_module := parse_module(entry_path)!
+    
+    // Resolve dependencies
+    modules := resolve_dependencies(entry_module)!
+    
+    // Generate bundle
+    bundle_content := generate_bundle(modules)!
+    
+    end_time := time.now()
+    
+    // Calculate total dependencies
+    mut total_deps := 0
+    for mod in modules {
+        total_deps += mod.mod.dependencies.len
+    }
+    
+    return PerformanceResult{
+        bundle_size: bundle_content.len
+        processing_time: end_time - start_time
+        module_count: modules.len
+        dependency_count: total_deps
+    }
 }
 
-fn test_small_bundle() ! {
-    println('\nTesting small bundle (2 modules)...')
-    entry_module := parse_module('examples/main.js')!
-    modules := resolve_dependencies(entry_module)!
-    bundle_content := generate_bundle(modules)!
-    println('Bundle size: ${bundle_content.len} bytes')
-}
-
-fn test_medium_bundle() ! {
-    println('\nTesting medium bundle (3 modules)...')
-    entry_module := parse_module('examples/counter.js')!
-    modules := resolve_dependencies(entry_module)!
-    bundle_content := generate_bundle(modules)!
-    println('Bundle size: ${bundle_content.len} bytes')
-}
-
-fn test_large_bundle() ! {
-    println('\nTesting large bundle (4 modules)...')
-    entry_module := parse_module('examples/todo.js')!
-    modules := resolve_dependencies(entry_module)!
-    bundle_content := generate_bundle(modules)!
-    println('Bundle size: ${bundle_content.len} bytes')
+fn print_performance_result(name string, result PerformanceResult) {
+    println('\n$name:')
+    println('----------------')
+    println('Bundle size: ${result.bundle_size} bytes')
+    println('Processing time: ${result.processing_time:.3f}ms')
+    println('Module count: $result.module_count')
+    println('Total dependencies: $result.dependency_count')
+    println('Average dependencies per module: ${f64(result.dependency_count) / f64(result.module_count):.1f}')
 }
 
 fn main() {
     println('Running performance tests...')
     
-    // Test small bundle
-    small_time := measure_time(test_small_bundle) or { 0.0 }
-    println('Small bundle time: ${small_time:.2f}ms')
+    // Test small bundle (calculator)
+    small_result := measure_performance('examples/calculator.js') or { return }
+    print_performance_result('Small Bundle (Calculator)', small_result)
     
-    // Test medium bundle
-    medium_time := measure_time(test_medium_bundle) or { 0.0 }
-    println('Medium bundle time: ${medium_time:.2f}ms')
+    // Test medium bundle (counter)
+    medium_result := measure_performance('examples/counter.js') or { return }
+    print_performance_result('Medium Bundle (Counter)', medium_result)
     
-    // Test large bundle
-    large_time := measure_time(test_large_bundle) or { 0.0 }
-    println('Large bundle time: ${large_time:.2f}ms')
+    // Test large bundle (game)
+    large_result := measure_performance('examples/game.js') or { return }
+    print_performance_result('Large Bundle (Game)', large_result)
+    
+    // Test extra large bundle (todo)
+    xlarge_result := measure_performance('examples/todo.js') or { return }
+    print_performance_result('Extra Large Bundle (Todo)', xlarge_result)
 } 
