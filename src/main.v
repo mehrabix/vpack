@@ -164,8 +164,24 @@ fn resolve_dependencies(entry_module JsModule) ![]ResolvedModule {
 fn transform_content(content string, module_path string, module_ids map[string]int) string {
     mut transformed := content
 
+    // Transform function exports first
+    mut function_export_pattern := regex.regex_opt('export\\s+function\\s+(\\w+)\\s*\\([^)]*\\)\\s*\\{[^}]*\\}') or { return transformed }
+    if function_export_pattern.matches_string(transformed) {
+        for m in function_export_pattern.find_all_str(transformed) {
+            mut name_pattern := regex.regex_opt('function\\s+(\\w+)') or { continue }
+            name_match := name_pattern.find_all_str(m)
+            
+            if name_match.len > 0 {
+                name := name_match[0].trim_string_left('function ').trim(' ')
+                function_body := m.trim_string_left('export ')
+                transformed = transformed.replace(m, function_body)
+                transformed = transformed + '\r\nmodule.exports.${name} = ${name};'
+            }
+        }
+    }
+
     // Transform ES6 imports to CommonJS requires
-    mut import_pattern := regex.regex_opt('import\\s*\\{([^}]+)\\}\\s*from\\s*["\']([^"\']+)["\']') or { return content }
+    mut import_pattern := regex.regex_opt('import\\s*\\{([^}]+)\\}\\s*from\\s*["\']([^"\']+)["\']') or { return transformed }
     if import_pattern.matches_string(transformed) {
         for m in import_pattern.find_all_str(transformed) {
             mut vars_pattern := regex.regex_opt('\\{([^}]+)\\}') or { continue }
@@ -200,22 +216,6 @@ fn transform_content(content string, module_path string, module_ids map[string]i
                 resolved_path := resolve_import_path(path, module_path)
                 module_id := module_ids[resolved_path]
                 transformed = transformed.replace(m, 'const ${name} = require(${module_id})')
-            }
-        }
-    }
-
-    // Transform function exports
-    mut function_export_pattern := regex.regex_opt('export\\s+function\\s+(\\w+)\\s*\\([^)]*\\)') or { return transformed }
-    if function_export_pattern.matches_string(transformed) {
-        for m in function_export_pattern.find_all_str(transformed) {
-            mut name_pattern := regex.regex_opt('function\\s+(\\w+)\\s*\\([^)]*\\)') or { continue }
-            name_match := name_pattern.find_all_str(m)
-            
-            if name_match.len > 0 {
-                full_match := name_match[0]
-                name := full_match.trim_string_left('function ').trim(' ').all_before('(')
-                transformed = transformed.replace(m, full_match)
-                transformed = transformed + '\r\nmodule.exports.${name} = ${name};'
             }
         }
     }
